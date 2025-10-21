@@ -1,0 +1,122 @@
+# Workload Identity Federation Configuration with X.509 Certificates
+
+# Enable required APIs
+resource "google_project_service" "iamcredentials" {
+  service            = "iamcredentials.googleapis.com"
+  disable_on_destroy = false
+}
+
+resource "google_project_service" "sts" {
+  service            = "sts.googleapis.com"
+  disable_on_destroy = false
+}
+
+# Create Workload Identity Pool
+resource "google_iam_workload_identity_pool" "kafka_connector_pool" {
+  provider                  = google-beta
+  workload_identity_pool_id = var.workload_identity_pool_id
+  display_name              = "Kafka Connector Workload Identity Pool"
+  description               = "Workload Identity Pool for Kafka to PubSub Connector using X.509 certificates"
+  disabled                  = false
+
+  depends_on = [
+    google_project_service.iamcredentials,
+    google_project_service.sts
+  ]
+}
+
+# Create X.509 Workload Identity Provider
+resource "google_iam_workload_identity_pool_provider" "x509_provider" {
+  provider                           = google-beta
+  workload_identity_pool_id          = google_iam_workload_identity_pool.kafka_connector_pool.workload_identity_pool_id
+  workload_identity_pool_provider_id = var.workload_identity_provider_id
+  display_name                       = "X.509 Certificate Provider"
+  description                        = "X.509 certificate-based authentication for Kafka Connector"
+  disabled                           = false
+
+  # X.509 certificate configuration
+  x509 {
+    trust_store {
+      trust_anchors {
+        pem_certificate = file(var.x509_certificate_path)
+      }
+    }
+  }
+
+  # Attribute mapping from certificate to Google Cloud identity
+  attribute_mapping = {
+    "google.subject"                = "assertion.subject.dn.cn"
+    "attribute.certificate_subject" = "assertion.subject.dn"
+    "attribute.certificate_dns"     = "assertion.san_dns.size() > 0 ? assertion.san_dns[0] : ''"
+    "attribute.certificate_uri"     = "assertion.san_uri.size() > 0 ? assertion.san_uri[0] : ''"
+  }
+
+  # Attribute condition (optional - can be used for additional validation)
+  # attribute_condition = "assertion.subject.dn.cn == 'kafka-connector-workload'"
+}
+
+# Grant Service Account Token Creator role to the workload identity
+resource "google_service_account_iam_member" "workload_identity_user" {
+  service_account_id = google_service_account.kafka_connector.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.kafka_connector_pool.name}/subject/kafka-connector-workload"
+}
+
+# Allow the workload identity to impersonate the service account
+resource "google_service_account_iam_member" "workload_identity_impersonation" {
+  service_account_id = google_service_account.kafka_connector.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.kafka_connector_pool.name}/subject/kafka-connector-workload"
+}
+
+# Create credential configuration file
+resource "local_file" "credential_config" {
+  content = jsonencode({
+    type                = "external_account"
+    audience           = "//iam.googleapis.com/${google_iam_workload_identity_pool.kafka_connector_pool.name}/providers/${google_iam_workload_identity_pool_provider.x509_provider.workload_identity_pool_provider_id}"
+    subject_token_type = "urn:ietf:params:oauth:token-type:jwt"
+    token_url          = "https://sts.googleapis.com/v1/token"
+    credential_source = {
+      file = var.jwt_token_file_path
+      format = {
+        type = "text"
+      }
+    }
+    service_account_impersonation_url = "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${google_service_account.kafka_connector.email}:generateAccessToken"
+  })
+  filename        = "${path.module}/workload-identity-credential.json"
+  file_permission = "0600"
+}
+
+# Output for debugging and verification
+resource "local_file" "workload_identity_info" {
+  content = <<-EOT
+    Workload Identity Federation Configuration
+    ==========================================
+    
+    Pool Name: ${google_iam_workload_identity_pool.kafka_connector_pool.name}
+    Pool ID: ${google_iam_workload_identity_pool.kafka_connector_pool.workload_identity_pool_id}
+    
+    Provider Name: ${google_iam_workload_identity_pool_provider.x509_provider.name}
+    Provider ID: ${google_iam_workload_identity_pool_provider.x509_provider.workload_identity_pool_provider_id}
+    
+    Service Account: ${google_service_account.kafka_connector.email}
+    
+    Audience: //iam.googleapis.com/${google_iam_workload_identity_pool.kafka_connector_pool.name}/providers/${google_iam_workload_identity_pool_provider.x509_provider.workload_identity_pool_provider_id}
+    
+    Certificate Subject: ${var.certificate_subject}
+    
+    Credential Configuration File: ${path.module}/workload-identity-credential.json
+    
+    To authenticate:
+    1. Generate JWT token using your X.509 certificate
+    2. Save the JWT token to: ${var.jwt_token_file_path}
+    3. Use the credential configuration file with Google Cloud client libraries
+    
+    Principal Identifier:
+    principal://iam.googleapis.com/${google_iam_workload_identity_pool.kafka_connector_pool.name}/subject/kafka-connector-workload
+  EOT
+  
+  filename        = "${path.module}/workload-identity-setup.txt"
+  file_permission = "0644"
+}

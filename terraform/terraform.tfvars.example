@@ -1,0 +1,12 @@
+# Copy this file to terraform.tfvars and fill in your values
+# DO NOT commit terraform.tfvars to version control
+
+project_id = "service-projects-02"
+region     = "us-central1"
+
+# Optional: Override default values
+# pubsub_topic_name              = "kafka-to-gcp"
+# pubsub_subscription_name       = "kafka-to-gcp-sub"
+# service_account_name           = "kafka-pubsub-connector"
+# enable_message_ordering        = true
+# message_retention_duration     = "604800s"

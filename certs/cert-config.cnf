@@ -1,0 +1,25 @@
+[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+distinguished_name = dn
+x509_extensions = v3_req
+
+[dn]
+C=US
+ST=California
+L=San Francisco
+O=Kafka PubSub Connector
+OU=Engineering
+CN=kafka-connector-workload
+emailAddress=admin@example.com
+
+[v3_req]
+subjectAltName = @alt_names
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = clientAuth
+
+[alt_names]
+DNS.1 = kafka-connector
+DNS.2 = localhost
+URI.1 = spiffe://kafka-connector/workload

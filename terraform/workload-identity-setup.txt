@@ -1,0 +1,25 @@
+Workload Identity Federation Configuration
+==========================================
+    
+Pool Name: projects/854892916626/locations/global/workloadIdentityPools/kafka-connector-pool
+Pool ID: kafka-connector-pool
+    
+Provider Name: projects/854892916626/locations/global/workloadIdentityPools/kafka-connector-pool/providers/x509-mtls-provider
+Provider ID: x509-mtls-provider
+    
+Service Account: kafka-pubsub-connector@service-projects-02.iam.gserviceaccount.com
+    
+Audience: //iam.googleapis.com/projects/854892916626/locations/global/workloadIdentityPools/kafka-connector-pool/providers/x509-mtls-provider
+    
+Credential Configuration File: ./workload-identity-credential.json
+    
+To authenticate:
+1. Use your X.509 certificate and private key
+2. Certificate subject CN will be mapped to: kafka-connector-workload
+3. Use the credential configuration file with Google Cloud client libraries
+    
+Principal Identifier:
+principal://iam.googleapis.com/projects/854892916626/locations/global/workloadIdentityPools/kafka-connector-pool/subject/kafka-connector-workload
+    
+Note: This configuration uses X.509 mTLS certificates for direct authentication.
+The certificate's Common Name (CN) is used as the subject identifier.

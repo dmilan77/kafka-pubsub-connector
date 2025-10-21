@@ -1,0 +1,59 @@
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+terraform.tfvars
+
+# GCP Credentials
+*.json
+!terraform/*.json
+!config/*.json
+!test-pubsub/pom.xml
+
+# Certificates and Keys (Workload Identity)
+certs/*.pem
+certs/*.p12
+certs/*.jwt
+certs/*.key
+certs/*.crt
+certs/*.csr
+certs/*.srl
+certs/*.txt
+certs/certificate_config.json
+certs/workload-identity-*.json
+certs/credential-config.json
+terraform/service-account-key.json
+~/.config/gcloud/certificate_config.json
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test
+test-reports/
+
+# Kafka Connect
+connector-jars/*.jar
