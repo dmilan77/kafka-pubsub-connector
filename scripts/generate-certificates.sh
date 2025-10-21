@@ -133,15 +133,14 @@ cat > $CERT_DIR/credential-config.json <<EOF
       "certificate_config_location": "$(pwd)/$CERT_DIR/certificate_config.json",
       "trust_chain_path": "$(pwd)/$CERT_DIR/ca-cert.pem"
     }
-  },
-  "service_account_impersonation_url": "https://iamcredentials.mtls.googleapis.com/v1/projects/-/serviceAccounts/SERVICE_ACCOUNT_EMAIL:generateAccessToken"
+  }
 }
 EOF
 echo -e "${GREEN}✓ X.509 mTLS credential configuration template created: $CERT_DIR/credential-config.json${NC}"
 echo -e "${YELLOW}  You'll need to update this file with your actual GCP values${NC}"
 
 # Create certificate configuration file
-echo -e "\n${YELLOW}Step 11: Creating certificate configuration file...${NC}"
+echo -e "\n${YELLOW}Step 11: Creating certificate configuration files...${NC}"
 cat > $CERT_DIR/certificate_config.json <<EOF
 {
   "cert_configs": {
@@ -152,7 +151,20 @@ cat > $CERT_DIR/certificate_config.json <<EOF
   }
 }
 EOF
-echo -e "${GREEN}✓ Certificate configuration created: $CERT_DIR/certificate_config.json${NC}"
+echo -e "${GREEN}✓ Local certificate configuration created: $CERT_DIR/certificate_config.json${NC}"
+
+# Create Docker-specific certificate configuration
+cat > $CERT_DIR/certificate_config_docker.json <<EOF
+{
+  "cert_configs": {
+    "workload": {
+      "cert_path": "/etc/kafka-connect/certs/workload-cert.pem",
+      "key_path": "/etc/kafka-connect/certs/workload-key.pem"
+    }
+  }
+}
+EOF
+echo -e "${GREEN}✓ Docker certificate configuration created: $CERT_DIR/certificate_config_docker.json${NC}"
 
 # Generate gcloud-based credential configurations
 echo -e "\n${YELLOW}Step 12: Generating gcloud credential configurations...${NC}"
@@ -243,7 +255,7 @@ with open('${CERT_DIR}/workload-identity-docker-config.json', 'r') as f:
 
 # Update to use explicit certificate config location instead of default
 config['credential_source']['certificate'] = {
-    "certificate_config_location": "/etc/kafka-connect/certs/certificate_config.json",
+    "certificate_config_location": "/etc/kafka-connect/certs/certificate_config_docker.json",
     "trust_chain_path": "/etc/kafka-connect/certs/ca-cert.pem"
 }
 

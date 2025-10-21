@@ -24,6 +24,9 @@ buildNumber.properties
 .terraform.lock.hcl
 terraform.tfvars
 
+# Environment Variables
+.env
+
 # GCP Credentials
 *.json
 !terraform/*.json

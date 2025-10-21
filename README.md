@@ -198,6 +198,4 @@ terraform destroy
 docker-compose down -v
 ```
 
-## License
 
-MIT License - see LICENSE file for details

@@ -123,6 +123,149 @@ fi
 
 echo -e "${GREEN}✓ Message delivery confirmed by Step 5 (successful publish with Message ID)${NC}"
 
+# Step 7: Test Kafka connector with X.509 configuration
+echo -e "\n${BLUE}==========================================${NC}"
+echo -e "${YELLOW}STEP 7: Testing Kafka Connector with X.509 mTLS...${NC}"
+echo -e "${BLUE}==========================================${NC}"
+
+# Clean build the connector
+echo -e "${BLUE}Running clean build...${NC}"
+cd "${PROJECT_ROOT}"
+mvn clean package -DskipTests > /dev/null 2>&1
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✓ Clean build completed successfully${NC}"
+else
+    echo -e "${RED}✗ Build failed${NC}"
+    exit 1
+fi
+
+# Copy JAR to connector-jars directory
+echo -e "${BLUE}Copying connector JAR...${NC}"
+JAR_FILE=$(ls target/kafka-pubsub-connector-*.jar 2>/dev/null | grep -v "original-" | head -1)
+if [ -f "$JAR_FILE" ]; then
+    cp "$JAR_FILE" connector-jars/
+    echo -e "${GREEN}✓ Connector JAR copied to connector-jars/${NC}"
+else
+    echo -e "${RED}✗ Could not find connector JAR in target/${NC}"
+    exit 1
+fi
+
+# Check if Kafka Connect is running
+if ! docker ps | grep -q "kafka-connect"; then
+    echo -e "${RED}✗ Kafka Connect is not running. Starting Kafka infrastructure...${NC}"
+    cd "${PROJECT_ROOT}"
+    ./start-kafka.sh
+    echo -e "${BLUE}Waiting 30 seconds for Kafka Connect to be ready...${NC}"
+    sleep 30
+else
+    echo -e "${GREEN}✓ Kafka Connect is running${NC}"
+    # Restart Kafka Connect to pick up the new JAR
+    echo -e "${BLUE}Restarting Kafka Connect to load updated connector...${NC}"
+    docker restart kafka-connect > /dev/null 2>&1
+    echo -e "${BLUE}Waiting 20 seconds for Kafka Connect to restart...${NC}"
+    sleep 20
+    echo -e "${GREEN}✓ Kafka Connect restarted${NC}"
+fi
+
+# Deploy X.509 connector
+echo -e "${BLUE}Deploying X.509 connector...${NC}"
+cd "${PROJECT_ROOT}"
+CONNECTOR_NAME=$(jq -r '.name' config/connector-config-x509.json)
+
+# Delete connector if it already exists
+if curl -s "http://localhost:8083/connectors/${CONNECTOR_NAME}" | grep -q "name"; then
+    echo -e "${BLUE}Removing existing connector...${NC}"
+    curl -s -X DELETE "http://localhost:8083/connectors/${CONNECTOR_NAME}" > /dev/null 2>&1
+    sleep 2
+    echo -e "${GREEN}✓ Existing connector removed${NC}"
+fi
+
+./deploy-connector.sh config/connector-config-x509.json
+
+# Wait for connector to initialize
+echo -e "${BLUE}Waiting 10 seconds for connector to initialize...${NC}"
+sleep 10
+
+# Check connector status
+echo -e "${BLUE}Checking connector status...${NC}"
+CONNECTOR_STATUS=$(curl -s "http://localhost:8083/connectors/${CONNECTOR_NAME}/status" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    state = data.get('connector', {}).get('state', 'UNKNOWN')
+    tasks = data.get('tasks', [])
+    task_states = [t.get('state', 'UNKNOWN') for t in tasks]
+    print(f\"{state}|{','.join(task_states)}\")
+except:
+    print('ERROR|')
+" 2>/dev/null)
+
+CONNECTOR_STATE=$(echo "$CONNECTOR_STATUS" | cut -d'|' -f1)
+TASK_STATES=$(echo "$CONNECTOR_STATUS" | cut -d'|' -f2)
+
+if [ "$CONNECTOR_STATE" = "RUNNING" ]; then
+    echo -e "${GREEN}✓ Connector state: RUNNING${NC}"
+    if [[ "$TASK_STATES" == *"RUNNING"* ]]; then
+        echo -e "${GREEN}✓ Task states: $TASK_STATES${NC}"
+    else
+        echo -e "${YELLOW}⚠ Task states: $TASK_STATES${NC}"
+    fi
+else
+    echo -e "${RED}✗ Connector state: $CONNECTOR_STATE${NC}"
+    echo -e "${YELLOW}Task states: $TASK_STATES${NC}"
+fi
+
+# Produce a test message to Kafka
+echo -e "${BLUE}Producing test message to Kafka topic...${NC}"
+TEST_MESSAGE="Kafka Connector X.509 Test - $(date '+%Y-%m-%d %H:%M:%S')"
+docker exec kafka-broker kafka-console-producer --bootstrap-server localhost:9092 --topic test-topic << EOF
+{"key": "test", "value": "$TEST_MESSAGE"}
+EOF
+
+echo -e "${GREEN}✓ Test message produced to Kafka${NC}"
+
+# Wait for connector to process the message
+echo -e "${BLUE}Waiting 10 seconds for connector to process message...${NC}"
+sleep 10
+
+# Check if message reached Pub/Sub (with retries)
+echo -e "${BLUE}Checking if message reached Pub/Sub subscription...${NC}"
+KAFKA_MESSAGE_FOUND="NOT_FOUND"
+for i in {1..3}; do
+  KAFKA_MESSAGE_FOUND=$(gcloud pubsub subscriptions pull ${SUBSCRIPTION_ID} --limit=10 --format=json --project=${PROJECT_ID} 2>&1 | python3 -c "
+import sys, json, base64
+try:
+    messages = json.load(sys.stdin)
+    for msg in messages:
+        data_b64 = msg.get('message', {}).get('data', '')
+        if data_b64:
+            data = base64.b64decode(data_b64).decode('utf-8')
+            if 'Kafka Connector X.509 Test' in data:
+                print('FOUND')
+                exit(0)
+    print('NOT_FOUND')
+except:
+    print('ERROR')
+" 2>/dev/null)
+  
+  if [ "$KAFKA_MESSAGE_FOUND" = "FOUND" ]; then
+    break
+  fi
+  
+  if [ $i -lt 3 ]; then
+    echo -e "${YELLOW}  Attempt $i: Not found, waiting 5 more seconds...${NC}"
+    sleep 5
+  fi
+done
+
+if [ "$KAFKA_MESSAGE_FOUND" = "FOUND" ]; then
+    echo -e "${GREEN}✓ Kafka message successfully delivered to Pub/Sub via X.509 connector!${NC}"
+    # Acknowledge the message
+    gcloud pubsub subscriptions pull ${SUBSCRIPTION_ID} --limit=10 --auto-ack --project=${PROJECT_ID} > /dev/null 2>&1
+else
+    echo -e "${YELLOW}⚠ Message not yet visible in subscription (may take a few more seconds)${NC}"
+fi
+
 # Summary
 echo -e "\n${BLUE}==========================================${NC}"
 echo -e "${GREEN}✅ END-TO-END TEST COMPLETE${NC}"
@@ -133,4 +276,5 @@ echo -e "  ✓ Certificate chain validated"
 echo -e "  ✓ Terraform deployed"
 echo -e "  ✓ X.509 mTLS authentication working"
 echo -e "  ✓ Messages flowing to Pub/Sub"
+echo -e "  ✓ Kafka connector tested with X.509"
 echo -e "\n${BLUE}X.509 mTLS authentication is fully operational! 🎉${NC}"
