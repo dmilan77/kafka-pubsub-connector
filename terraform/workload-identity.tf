@@ -47,19 +47,32 @@ resource "google_iam_workload_identity_pool_provider" "x509_provider" {
   }
 }
 
-# Grant Service Account Token Creator role to the workload identity
-resource "google_service_account_iam_member" "workload_identity_user" {
-  service_account_id = google_service_account.kafka_connector.name
-  role               = "roles/iam.serviceAccountTokenCreator"
-  member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.kafka_connector_pool.name}/subject/${var.workload_subject_name}"
+resource "google_pubsub_topic_iam_member" "publisher-x509" {
+  topic  = google_pubsub_topic.kafka_topic.name
+  role   = "roles/pubsub.publisher"
+  member = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.kafka_connector_pool.name}/subject/${var.workload_subject_name}"
 }
 
-# Allow the workload identity to impersonate the service account
-resource "google_service_account_iam_member" "workload_identity_impersonation" {
-  service_account_id = google_service_account.kafka_connector.name
-  role               = "roles/iam.workloadIdentityUser"
-  member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.kafka_connector_pool.name}/subject/${var.workload_subject_name}"
+# Grant Pub/Sub Viewer role to service account (for topic validation)
+resource "google_project_iam_member" "pubsub_viewer-x509" {
+  project = var.project_id
+  role    = "roles/pubsub.viewer"
+  member  = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.kafka_connector_pool.name}/subject/${var.workload_subject_name}"
 }
+
+# Grant Service Account Token Creator role to the workload identity
+# resource "google_service_account_iam_member" "workload_identity_user" {
+#   service_account_id = google_service_account.kafka_connector.name
+#   role               = "roles/iam.serviceAccountTokenCreator"
+#   member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.kafka_connector_pool.name}/subject/${var.workload_subject_name}"
+# }
+
+# # Allow the workload identity to impersonate the service account
+# resource "google_service_account_iam_member" "workload_identity_impersonation" {
+#   service_account_id = google_service_account.kafka_connector.name
+#   role               = "roles/iam.workloadIdentityUser"
+#   member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.kafka_connector_pool.name}/subject/${var.workload_subject_name}"
+# }
 
 # Create credential configuration file
 resource "local_file" "credential_config" {
