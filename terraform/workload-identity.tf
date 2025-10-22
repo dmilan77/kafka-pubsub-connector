@@ -60,21 +60,10 @@ resource "google_project_iam_member" "pubsub_viewer-x509" {
   member  = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.kafka_connector_pool.name}/subject/${var.workload_subject_name}"
 }
 
-# Grant Service Account Token Creator role to the workload identity
-# resource "google_service_account_iam_member" "workload_identity_user" {
-#   service_account_id = google_service_account.kafka_connector.name
-#   role               = "roles/iam.serviceAccountTokenCreator"
-#   member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.kafka_connector_pool.name}/subject/${var.workload_subject_name}"
-# }
+# Direct access - no impersonation needed
+# The workload identity principal has direct permissions via the IAM bindings above
 
-# # Allow the workload identity to impersonate the service account
-# resource "google_service_account_iam_member" "workload_identity_impersonation" {
-#   service_account_id = google_service_account.kafka_connector.name
-#   role               = "roles/iam.workloadIdentityUser"
-#   member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.kafka_connector_pool.name}/subject/${var.workload_subject_name}"
-# }
-
-# Create credential configuration file
+# Create credential configuration file for direct access (no impersonation)
 resource "local_file" "credential_config" {
   content = jsonencode({
     type                = "external_account"
@@ -86,7 +75,6 @@ resource "local_file" "credential_config" {
         certificate_config_location = var.jwt_token_file_path
       }
     }
-    service_account_impersonation_url = "https://iamcredentials.mtls.googleapis.com/v1/projects/-/serviceAccounts/${google_service_account.kafka_connector.email}:generateAccessToken"
   })
   filename        = "${path.module}/workload-identity-credential.json"
   file_permission = "0600"

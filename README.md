@@ -7,6 +7,7 @@ A Kafka Connect sink connector that publishes messages from Apache Kafka to Goog
 - **Dual Authentication Support**:
   - Service Account Key authentication (traditional)
   - X.509 mTLS Workload Identity Federation (enhanced security)
+- **TLS/SSL Support**: Secure Kafka communication with certificate-based encryption
 - Real-time message streaming from Kafka to Pub/Sub
 - Configurable batch size and timeout settings
 - Ordering key support for message sequencing
@@ -25,8 +26,14 @@ A Kafka Connect sink connector that publishes messages from Apache Kafka to Goog
 
 ### 1. Start Kafka Environment
 
+**Standard (PLAINTEXT):**
 ```bash
 ./start-kafka.sh
+```
+
+**With TLS/SSL encryption:**
+```bash
+./scripts/start-kafka-tls.sh
 ```
 
 This starts Zookeeper, Kafka, Kafka Connect, and Kafka UI (http://localhost:8080).
@@ -113,12 +120,67 @@ Checks connector status, task status, and recent logs.
 
 | Script | Purpose |
 |--------|---------|
-| `start-kafka.sh` | Start all Kafka services (Zookeeper, Kafka, Connect, UI) |
+| `start-kafka.sh` | Start all Kafka services (PLAINTEXT mode) |
 | `stop-kafka.sh` | Stop all Kafka services |
 | `deploy-connector.sh` | Deploy connector with service account key |
 | `test-connector.sh` | Send test messages to Kafka |
 | `health-check.sh` | Check connector and service health |
 | `setup.sh` | Initial environment setup |
+| `scripts/generate-kafka-tls-certs.sh` | Generate TLS certificates for Kafka |
+| `scripts/start-kafka-tls.sh` | Start Kafka with TLS/SSL encryption |
+| `scripts/stop-kafka-tls.sh` | Stop Kafka TLS services |
+| `scripts/test-kafka-tls.sh` | Test TLS/SSL connection and functionality |
+| `scripts/test-e2e-x509.sh` | End-to-end test with X.509 authentication |
+
+## Kafka TLS/SSL Configuration
+
+### Enable TLS Encryption for Kafka
+
+Generate TLS certificates and start Kafka with SSL enabled:
+
+```bash
+# Generate Kafka TLS certificates (first time only)
+./scripts/generate-kafka-tls-certs.sh
+
+# Start Kafka with TLS
+./scripts/start-kafka-tls.sh
+
+# Test TLS connection
+./scripts/test-kafka-tls.sh
+
+# Stop Kafka TLS
+./scripts/stop-kafka-tls.sh
+```
+
+**Ports:**
+- `9092`: PLAINTEXT (standard, for backward compatibility)
+- `9093`: SSL/TLS (encrypted, recommended for production)
+
+**Produce messages via TLS:**
+```bash
+docker exec -it kafka-broker kafka-console-producer \
+  --bootstrap-server kafka:29093 \
+  --topic test-topic \
+  --producer.config /etc/kafka/secrets/client-ssl.properties
+```
+
+**Consume messages via TLS:**
+```bash
+docker exec kafka-broker kafka-console-consumer \
+  --bootstrap-server kafka:29093 \
+  --topic test-topic \
+  --from-beginning \
+  --consumer.config /etc/kafka/secrets/client-ssl.properties
+```
+
+**Certificate files:** Located in `kafka-certs/` (default password: `kafka-secret`)
+
+### TLS Configuration Details
+
+- **Encryption**: TLS 1.2/1.3
+- **Authentication**: Mutual TLS (mTLS) with client certificates
+- **Docker Compose**: `docker-compose-tls.yml`
+- **Keystores**: Java keystores for broker and clients
 
 ## Configuration
 
@@ -131,13 +193,27 @@ Edit `config/connector-config.json`:
 }
 ```
 
-### X.509 mTLS Workload Identity
+### X.509 mTLS Workload Identity (Direct Access)
+
+The X.509 configuration uses **direct access** (no service account impersonation). The workload identity principal authenticates directly to Pub/Sub using its X.509 certificate.
 
 Edit `config/connector-config-x509.json`:
 ```json
 {
   "gcp.credentials.file.path": "/etc/kafka-connect/certs/workload-identity-docker-config.json"
 }
+```
+
+**Test X.509 authentication:**
+```bash
+cd test-pubsub
+mvn exec:java -Dexec.mainClass="PubSubX509Test" \
+  -Dexec.args="../certs/workload-identity-gcloud-config-local.json service-projects-02 kafka-to-gcp"
+```
+
+**End-to-end test** (includes X.509 + Kafka TLS):
+```bash
+./scripts/test-e2e-x509.sh
 ```
 
 ## Architecture

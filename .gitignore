@@ -48,6 +48,10 @@ certs/credential-config.json
 terraform/service-account-key.json
 ~/.config/gcloud/certificate_config.json
 
+# Kafka TLS Certificates
+kafka-certs/
+!kafka-certs/.gitkeep
+
 # Logs
 *.log
 

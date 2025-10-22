@@ -1,0 +1,18 @@
+{
+  "name": "pubsub-sink-connector-tls",
+  "config": {
+    "connector.class": "com.example.kafka.connect.pubsub.PubSubSinkConnector",
+    "tasks.max": "3",
+    "topics": "test-topic",
+    "gcp.project.id": "service-projects-02",
+    "pubsub.topic": "kafka-to-gcp",
+    "gcp.credentials.file.path": "/etc/kafka-connect/credentials/service-account-key.json",
+    "pubsub.ordering.key.source": "key",
+    "pubsub.batch.size": "100",
+    "pubsub.publish.timeout.ms": "30000",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+    "_comment": "When using TLS/SSL, Kafka Connect automatically uses the SSL configuration from environment variables"
+  }
+}

@@ -204,8 +204,8 @@ if command -v gcloud &> /dev/null; then
         if [ $? -eq 0 ]; then
           echo -e "${GREEN}✓ Local credential configuration created: $CERT_DIR/workload-identity-gcloud-config-local.json${NC}"
           
-          # Update local config to use explicit certificate_config_location
-          echo -e "${YELLOW}Updating local configuration to use explicit certificate paths...${NC}"
+          # Update local config to use explicit certificate_config_location and remove impersonation
+          echo -e "${YELLOW}Updating local configuration for direct access (no impersonation)...${NC}"
           python3 << PYTHON_EOF
 import json
 
@@ -219,11 +219,15 @@ config['credential_source']['certificate'] = {
     "trust_chain_path": "$(pwd)/${CERT_DIR}/ca-cert.pem"
 }
 
+# Remove service account impersonation for direct access
+if 'service_account_impersonation_url' in config:
+    del config['service_account_impersonation_url']
+
 # Write back
 with open('${CERT_DIR}/workload-identity-gcloud-config-local.json', 'w') as f:
     json.dump(config, f, indent=2)
 
-print("✓ Updated to use explicit certificate configuration")
+print("✓ Updated to use direct access (no impersonation)")
 PYTHON_EOF
           
           if [ $? -eq 0 ]; then
@@ -244,8 +248,8 @@ PYTHON_EOF
           if [ $? -eq 0 ]; then
             echo -e "${GREEN}✓ Docker credential configuration created: $CERT_DIR/workload-identity-docker-config.json${NC}"
             
-            # Update Docker config to use explicit certificate_config_location
-            echo -e "${YELLOW}Updating Docker configuration to use explicit certificate paths...${NC}"
+            # Update Docker config to use explicit certificate_config_location and remove impersonation
+            echo -e "${YELLOW}Updating Docker configuration for direct access (no impersonation)...${NC}"
             python3 << PYTHON_EOF
 import json
 
@@ -259,11 +263,15 @@ config['credential_source']['certificate'] = {
     "trust_chain_path": "/etc/kafka-connect/certs/ca-cert.pem"
 }
 
+# Remove service account impersonation for direct access
+if 'service_account_impersonation_url' in config:
+    del config['service_account_impersonation_url']
+
 # Write back
 with open('${CERT_DIR}/workload-identity-docker-config.json', 'w') as f:
     json.dump(config, f, indent=2)
 
-print("✓ Updated to use explicit certificate configuration")
+print("✓ Updated to use direct access (no impersonation)")
 PYTHON_EOF
             
             if [ $? -eq 0 ]; then

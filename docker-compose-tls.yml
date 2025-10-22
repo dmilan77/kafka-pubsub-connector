@@ -1,0 +1,166 @@
+version: '3.8'
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    hostname: zookeeper
+    container_name: kafka-zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-logs:/var/lib/zookeeper/log
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    hostname: kafka
+    container_name: kafka-broker
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"   # PLAINTEXT
+      - "9093:9093"   # SSL
+      - "9101:9101"   # JMX
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      
+      # Listener Configuration - Both PLAINTEXT and SSL
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,SSL:SSL,SSL_HOST:SSL
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092,SSL://kafka:29093,SSL_HOST://localhost:9093
+      KAFKA_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://0.0.0.0:9092,SSL://kafka:29093,SSL_HOST://0.0.0.0:9093
+      
+      # Inter-broker communication (use SSL for production, PLAINTEXT for easier debugging)
+      KAFKA_INTER_BROKER_LISTENER_NAME: SSL
+      
+      # SSL Configuration
+      KAFKA_SSL_KEYSTORE_FILENAME: kafka.server.keystore.jks
+      KAFKA_SSL_KEYSTORE_CREDENTIALS: kafka-ssl-credentials.txt
+      KAFKA_SSL_KEY_CREDENTIALS: kafka-ssl-credentials.txt
+      KAFKA_SSL_TRUSTSTORE_FILENAME: kafka.server.truststore.jks
+      KAFKA_SSL_TRUSTSTORE_CREDENTIALS: kafka-ssl-credentials.txt
+      KAFKA_SSL_CLIENT_AUTH: required
+      KAFKA_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: ""
+      
+      # SSL Protocol Settings
+      KAFKA_SSL_ENABLED_PROTOCOLS: TLSv1.2,TLSv1.3
+      KAFKA_SSL_PROTOCOL: TLSv1.3
+      
+      # Other Kafka Settings
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: localhost
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+      - ./kafka-certs:/etc/kafka/secrets
+      - ./kafka-certs/kafka-ssl-credentials.properties:/etc/kafka/secrets/kafka-ssl-credentials.txt
+
+  kafka-connect:
+    image: confluentinc/cp-kafka-connect:7.5.0
+    hostname: kafka-connect
+    container_name: kafka-connect
+    depends_on:
+      - kafka
+    ports:
+      - "8083:8083"
+    environment:
+      # Bootstrap servers - can use SSL or PLAINTEXT
+      CONNECT_BOOTSTRAP_SERVERS: 'kafka:29093'  # Use SSL port
+      
+      # SSL Configuration for connecting to Kafka
+      CONNECT_SECURITY_PROTOCOL: SSL
+      CONNECT_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/kafka.client.truststore.jks
+      CONNECT_SSL_TRUSTSTORE_PASSWORD: kafka-secret
+      CONNECT_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets/kafka.client.keystore.jks
+      CONNECT_SSL_KEYSTORE_PASSWORD: kafka-secret
+      CONNECT_SSL_KEY_PASSWORD: kafka-secret
+      CONNECT_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: ""
+      
+      # Producer SSL Configuration
+      CONNECT_PRODUCER_SECURITY_PROTOCOL: SSL
+      CONNECT_PRODUCER_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/kafka.client.truststore.jks
+      CONNECT_PRODUCER_SSL_TRUSTSTORE_PASSWORD: kafka-secret
+      CONNECT_PRODUCER_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets/kafka.client.keystore.jks
+      CONNECT_PRODUCER_SSL_KEYSTORE_PASSWORD: kafka-secret
+      CONNECT_PRODUCER_SSL_KEY_PASSWORD: kafka-secret
+      CONNECT_PRODUCER_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: ""
+      
+      # Consumer SSL Configuration
+      CONNECT_CONSUMER_SECURITY_PROTOCOL: SSL
+      CONNECT_CONSUMER_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/kafka.client.truststore.jks
+      CONNECT_CONSUMER_SSL_TRUSTSTORE_PASSWORD: kafka-secret
+      CONNECT_CONSUMER_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets/kafka.client.keystore.jks
+      CONNECT_CONSUMER_SSL_KEYSTORE_PASSWORD: kafka-secret
+      CONNECT_CONSUMER_SSL_KEY_PASSWORD: kafka-secret
+      CONNECT_CONSUMER_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: ""
+      
+      # Connect Configuration
+      CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: compose-connect-group
+      
+      # Internal Topic Configuration with SSL
+      CONNECT_CONFIG_STORAGE_TOPIC: docker-connect-configs
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_FLUSH_INTERVAL_MS: 10000
+      CONNECT_OFFSET_STORAGE_TOPIC: docker-connect-offsets
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_TOPIC: docker-connect-status
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      
+      # Converters
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      
+      # Plugin Path
+      CONNECT_PLUGIN_PATH: "/usr/share/java,/usr/share/confluent-hub-components,/etc/kafka-connect/jars"
+      
+      # Logging
+      CONNECT_LOG4J_LOGGERS: org.apache.zookeeper=ERROR,org.I0Itec.zkclient=ERROR,org.reflections=ERROR
+      
+    volumes:
+      - ./connector-jars:/etc/kafka-connect/jars
+      - ./terraform:/etc/kafka-connect/credentials
+      - ./certs:/etc/kafka-connect/certs
+      - ./kafka-certs:/etc/kafka/secrets
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      - kafka
+      - kafka-connect
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092  # Use PLAINTEXT for UI
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: kafka-connect
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://kafka-connect:8083
+      
+      # Optional: Enable SSL for Kafka UI
+      # KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL: SSL
+      # KAFKA_CLUSTERS_0_SSL_TRUSTSTORELOCATION: /kafka-certs/kafka.client.truststore.jks
+      # KAFKA_CLUSTERS_0_SSL_TRUSTSTOREPASSWORD: kafka-secret
+    # Uncomment if you want Kafka UI to use SSL
+    # volumes:
+    #   - ./kafka-certs:/kafka-certs
+
+volumes:
+  zookeeper-data:
+  zookeeper-logs:
+  kafka-data:

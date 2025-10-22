@@ -16,7 +16,7 @@
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <kafka.version>3.6.0</kafka.version>
+        <kafka.version>3.9.0</kafka.version>
         <google.cloud.pubsub.version>1.133.0</google.cloud.pubsub.version>
         <google.auth.version>1.40.0</google.auth.version>
         <slf4j.version>2.0.9</slf4j.version>
